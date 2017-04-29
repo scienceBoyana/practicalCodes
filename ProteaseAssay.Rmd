@@ -1,0 +1,344 @@
+---
+title: "R Notebook"
+output:
+  pdf_document: default
+  html_notebook: default
+---
+
+
+First, we read in the tables:
+```{r readDataIn}
+samples <- c('negCtrl-pBSMul', 
+             'negCtrl+129',
+             'dA+pBSMul',
+             'dA+129',
+             'dC+pBSMul',
+             'dC+129',
+             'dV+pBSMul',
+             'dV+129',
+             'dW+pBSMul',
+             'dW+129')
+temp = list.files(pattern="*.txt")
+list2env(
+  lapply(setNames(temp, make.names(gsub("*.txt$", "", temp))), 
+         read.table, sep='\t', col.names = samples, dec=','), envir = .GlobalEnv)
+dfs <- ls()[grep("^Bod.*|^GFP.*|^OD.*|^B.*"  ,ls())]
+
+for(s in dfs){
+  tmp.df <- eval(parse(text = s))
+  tmp.df[tmp.df < 0] <- NA
+  assign(s, tmp.df)
+}
+```
+
+Next, I will re calculate the values before dillution:
+
+```{R getVars}
+pos.gfp <- grep('^GFP*', dfs)
+pos.bod <- grep('^Bot*', dfs)
+pos.B <- grep('^B*', dfs)
+pos.od <- grep('^OD*', dfs)
+```
+
+```{R removeDil}
+for(k in dfs[grep('^B.*200.*', dfs)]){
+  df <- eval(parse(text = k))
+  df <- df * 200
+  assign(k, df)
+  # print(k)
+}
+
+for(k in dfs[grep('^B.*50.*', dfs)]){
+  df <- eval(parse(text = k))
+  df <- df * 50
+  assign(k, df)
+  # print(k)
+}
+
+for(k in dfs[grep('^OD.*10.*', dfs)]){
+  df <- eval(parse(text = k))
+  df <- df * 10
+  assign(k, df)
+  # print(k)
+}
+
+for(k in dfs[grep('^OD.*50.*', dfs)]){
+  df <- eval(parse(text = k))
+  df <- df * 50
+  assign(k, df)
+  # print(k)
+}
+```
+
+Now, the pBSMul control will be removed
+
+```{R rempBSMul}
+meas <- c(pos.bod, pos.B)  # get the bod and B meassurements
+meas <- dfs[meas]
+
+ods <- dfs[pos.od]  # get the ODs
+
+# ods[grep('.*24m.*', ods)]
+
+for(t in c('24m', '24p', '30m', '30p', '35m', '35p', '44m', '44p')){
+  tmp.meas <- meas[grep(paste('.*',t,'.*',sep=''), meas)]
+  tmp.od <- eval(parse(text= ods[grep(paste('.*',t,'.*',sep=''), ods)] ))
+#  tmp.od <- ods[grep(paste('.*',t,'.*',sep=''), ods)]
+  
+  for(tmp in tmp.meas){
+    tmp.df <- eval(parse(text = tmp))
+    tmp.df <- tmp.df / tmp.od
+
+    assign(tmp, tmp.df)
+  #  print(paste(tmp, tmp.od, sep = ' to '))
+  }
+}
+
+for(k in dfs[pos.B]){
+  df <- eval(parse(text = k))
+  df.out <- NULL
+  m <- NULL
+  
+  for(i in 1:( ncol(df)/2 ) ){
+    j <- i * 2
+    m <- c(m, j)
+    l <- j-1
+    
+    cnew <- df[,j] - df[,l]
+    
+    df.out <- cbind(df.out, cnew)
+    
+  }
+  colnames(df.out) <- colnames(df)[m]
+  df.out <- as.data.frame(df.out)
+  
+  assign(k, df.out)
+}
+
+for(k in dfs[pos.bod]){
+  df <- eval(parse(text = k))
+  
+  df.out <- NULL
+  
+  df.out <- df[, c(2,4,6,8,10)]
+  
+  assign(k, df.out)
+}
+```
+
+Prepare the table for plotting:
+
+```{R tableCreation, message=FALSE, warning=FALSE}
+# get the vars with Casaminoacids
+require(reshape2)
+
+big.t <- NULL
+
+for(t in c('24', '30', '35', '44')){
+  tmp.meas <- meas[grep(paste('.*',t,'p.*',sep=''), meas)]
+  
+  tmp.bod <- eval(parse(text = tmp.meas[1]))
+  tmp.bod <- melt(tmp.bod)
+  tmp.bod <- data.frame(Strain = tmp.bod[,1],
+                        Value = tmp.bod[,2],
+                        Measurement = 'Bodipy',
+                        Time = t,
+                        Cas = '-',
+                        Bio.Rep = rep(c('A', 'A',
+                                        'B', 'B',
+                                        'C', 'C',
+                                        'D', 'D'), 5))
+  
+  
+  tmp.B <- eval(parse(text = tmp.meas[2]))
+  tmp.B <- melt(tmp.B)
+  tmp.B <- data.frame(Strain = tmp.B[,1],
+                        Value = tmp.B[,2],
+                        Measurement = 'B',
+                        Time = t,
+                        Cas = '-',
+                        Bio.Rep = rep(c('A', 'A',
+                                        'B', 'B',
+                                        'C', 'C',
+                                        'D', 'D'), 5))
+  
+  
+  big.t <- rbind(big.t, tmp.bod, tmp.B)
+}
+
+for(t in c('24', '30', '35', '44')){
+  tmp.meas <- meas[grep(paste('.*',t,'m.*',sep=''), meas)]
+  
+  tmp.bod <- eval(parse(text = tmp.meas[1]))
+  tmp.bod <- melt(tmp.bod)
+  tmp.bod <- data.frame(Strain = tmp.bod[,1],
+                        Value = tmp.bod[,2],
+                        Measurement = 'Bodipy',
+                        Time = t,
+                        Cas = '+',
+                        Bio.Rep = rep(c('A', 'A',
+                                        'B', 'B',
+                                        'C', 'C',
+                                        'D', 'D'), 5))
+  
+  
+  tmp.B <- eval(parse(text = tmp.meas[2]))
+  tmp.B <- melt(tmp.B)
+  tmp.B <- data.frame(Strain = tmp.B[,1],
+                        Value = tmp.B[,2],
+                        Measurement = 'B',
+                        Time = t,
+                        Cas = '+',
+                        Bio.Rep = rep(c('A', 'A',
+                                        'B', 'B',
+                                        'C', 'C',
+                                        'D', 'D'), 5))
+  
+  
+  big.t <- rbind(big.t, tmp.bod, tmp.B)
+}
+
+big.t$Time <- as.numeric(as.character(big.t$Time))
+```
+
+And finally, the plotting:
+
+```{R plotting}
+require(ggplot2)
+
+# Remove strong outlier
+big.t[big.t$Strain == 'dW.129' & big.t$Bio.Rep == 'D' & big.t$Time == 30 & big.t$Cas == '+', ]$Value <- NA
+
+#big.t.Tmean <- aggregate()
+cpalette <- c("#999999", "#E69F00", "#009E73", "#56B4E9", "#F0E442")
+
+plot.final.bioRep <- ggplot(big.t, aes(x=Time, y=Value, colour = Strain)) +
+  geom_point(position = position_jitter(w = 0.3)) + 
+  facet_grid(Measurement~Cas + Bio.Rep, scales = "free_y",
+             labeller = label_both) +
+  stat_summary(fun.y = "mean", size = 1, geom = 'line') +
+  ylab('Converted Substr. / OD                           Fluorescence / (OD x min)') +
+  xlab('Time [h]')
+
+plot.final <- ggplot(big.t, aes(x=Time, y=Value, colour = Strain)) +
+  geom_point(position = position_jitter(w = 0.3)) + 
+  scale_color_manual(values=cpalette) +
+  facet_grid(Measurement~Cas, scales = "free_y",
+             labeller = label_both) +
+  stat_summary(fun.y = "mean", size = 1, geom = 'line') +
+  ylab('Converted Substr. / OD                           Fluorescence / (OD x min)') +
+  xlab('Time [h]')
+
+print(plot.final)
+print(plot.final.bioRep)
+```
+
+
+Comparisson frozen and fresh sample.
+
+```{R frozen, message=FALSE, warning=FALSE}
+Bod_30m_freeze <- read.table('RepeatsFreezer/Bod_30m_freezer.txt', sep='\t', dec = ',', col.names = samples)
+Bod_30p_freeze <- read.table('RepeatsFreezer/Bod_30p_freezer.txt', sep='\t', dec = ',', col.names = samples)
+B_30m_freeze <- read.table('RepeatsFreezer/B_1zu200_A6_t30m_repeat.txt', sep='\t', dec = ',', col.names = samples) * 200
+B_30p_freeze <- read.table('RepeatsFreezer/B_1zu200_A6+t30p_repeat.txt', sep='\t', dec = ',', col.names = samples) * 200
+
+
+
+Bod_30m_freeze <- Bod_30m_freeze / OD_30m_A6_minus_1_50
+Bod_30p_freeze <- Bod_30p_freeze / OD_30p_A6_plus_1_50
+B_30m_freeze <- B_30m_freeze / OD_30m_A6_minus_1_50
+B_30m_freeze <- B_30m_freeze / OD_30p_A6_plus_1_50
+
+frozen <- c('Bod_30m_freeze', 'Bod_30p_freeze', 'B_30m_freeze', 'B_30p_freeze')
+
+for(k in frozen){
+  df <- eval(parse(text = k))
+  df.out <- NULL
+  m <- NULL
+  
+  for(i in 1:( ncol(df)/2 ) ){
+    j <- i * 2
+    m <- c(m, j)
+    l <- j-1
+    
+    cnew <- df[,j] - df[,l]
+    
+    df.out <- cbind(df.out, cnew)
+    
+  }
+  colnames(df.out) <- colnames(df)[m]
+  df.out <- as.data.frame(df.out)
+  
+  assign(k, df.out)
+}
+
+v.mes <- c('Bodipy', 'Bodipy', 'B', 'B')
+v.cas <- c('-', '+', '-', '+')
+i <- 1
+frozen.out <- NULL
+for(f in frozen){
+  tmp <- melt(eval(parse(text = f)))
+  tmp <- data.frame(Strain = tmp[,1],
+                    Value = tmp[,2],
+                    Measurement = v.mes[i],
+                    Cas = v.cas[i],
+                    Bio.Rep = rep(c('A', 'A',
+                                        'B', 'B',
+                                        'C', 'C',
+                                        'D', 'D'), 5),
+                    Status = 'Frozen')
+  i <- i+1
+  frozen.out <- rbind(frozen.out, tmp)
+}
+
+not.frozen <- subset(big.t, Time==30)
+not.frozen <- data.frame(not.frozen[, -4],
+                         Status = 'Fresh')
+
+fr.df <- rbind(frozen.out, not.frozen)
+fr.df.Tmean <- aggregate(Value ~ Strain + Measurement + Cas + Bio.Rep + Status, fr.df, mean)
+
+fr.fr.bioRep <- ggplot(fr.df, aes(x=Strain, y=Value, color=Status)) +
+  facet_grid(Measurement ~ Cas + Bio.Rep, scales = 'free_y',
+             labeller = label_both) +
+  geom_point(position = 'dodge') +
+  theme(axis.text.x = element_text(angle=90,
+                                   hjust = 1,
+                                   vjust = 0.5))+
+  ylab('Converted Substr. / OD                           Fluorescence / (OD x min)')
+
+fr.fr <- ggplot(fr.df.Tmean, aes(x=Strain, y=Value, color=Status)) +
+  facet_grid(Measurement ~ Cas, scales = 'free_y',
+             labeller = label_both) +
+  geom_point(position = 'dodge') +
+  theme(axis.text.x = element_text(angle=90,
+                                   hjust = 1,
+                                   vjust = 0.5)) +
+  ylab('Converted Substr. / OD                           Fluorescence / (OD x min)')
+
+
+print(fr.fr)
+print(fr.fr.bioRep)
+```
+
+Save the plots and tables:
+```{R savePlots}
+pdf('Plots/FinalPlot_BioRep.pdf', width=12, height = 7)
+plot.final.bioRep
+dev.off()
+
+pdf('Plots/FinalPlot.pdf', width=8, height = 7)
+plot.final
+dev.off()
+
+pdf('Plots/FreezeFresh_BioRep.pdf', width=12, height = 7)
+fr.fr.bioRep
+dev.off()
+
+pdf('Plots/FreezeFresh.pdf', width=8, height = 7)
+fr.fr
+dev.off()
+
+write.table(big.t, file = 'Report/TimeCourse.txt',row.names = F, sep = '\t', quote = F)
+write.table(fr.df, file = 'Report/FreezeFreshDF.txt', row.names = F, sep = '\t', quote = F)
+```
